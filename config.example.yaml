@@ -1,0 +1,78 @@
+# SQLite database persisting matched transactions and indexer progress,
+# so a restart resumes where the process left off (default: ethindex.db)
+database: ethindex.db
+
+# Prometheus /metrics + /healthz listen address; empty disables
+# metrics: ":9090"
+
+# Consumer events API: SSE stream with catch-up on reconnect; empty disables
+# api: ":8080"
+
+# Addresses to watch. Global: every indexer watches this same set of
+# addresses on its own chain.
+addresses:
+  - "0x0000000000000000000000000000000000000001"
+
+# HD wallets: derive watched addresses from a BIP32 extended PUBLIC key
+# (never put an xprv here - it is rejected). Export the xpub at the
+# account level (e.g. m/44'/60'/0'); only non-hardened derivation is
+# possible from an xpub.
+# hd_wallets:
+#   - xpub: "xpub6C..."
+#     path: "0/*"   # relative to the xpub, * is the index (default 0/*)
+#     start: 0      # first index (default 0)
+#     count: 1000   # number of addresses to derive and track
+
+# One indexer per chain. Each connects to its own node, cross-checks the
+# node's chain ID against chain_id at startup (a mismatch stops the whole
+# process), and tags its events and logs with `name`.
+indexers:
+  - name: ethereum
+    chain_id: 1
+    # WebSocket RPC endpoint (required; subscriptions need ws:// or wss://)
+    rpc_url: wss://ethereum-rpc.publicnode.com
+    # HTTP endpoint for queries (blocks, logs, receipts). Derived from
+    # rpc_url by scheme swap (wss -> https) when omitted.
+    # http_rpc_url: https://ethereum-rpc.publicnode.com
+    # When a transfer counts as final: a block depth (default 12), or
+    # "finalized"/"safe" to use the node's consensus tags instead
+    confirmations: 12
+    # How long a pending transaction may stay unmined before it is checked
+    # against the node and declared dropped (default 30m)
+    pending_timeout: 30m
+    # Parallel RPC requests against this node: catch-up span fetches and
+    # pending lookups (default 8). In-flight catch-up data scales with
+    # concurrency x batch_blocks - throttled public providers may be
+    # faster with less.
+    # concurrency: 8
+    # Asset name reported for native-coin transfers (default ETH;
+    # e.g. BNB on BSC, POL on Polygon)
+    # native_symbol: ETH
+    # Blocks fetched per JSON-RPC batch request during catch-up
+    # (default 10). The node must accept batch requests; 1 disables
+    # multi-block batching.
+    # batch_blocks: 10
+    # Skip blocks older than this during catch-up (-resume or a long
+    # disconnect) instead of scanning arbitrarily deep. Transfers in
+    # skipped blocks are never indexed. Default: no limit.
+    # max_catchup_age: 24h
+    # ERC20 tokens to watch on this chain. Omit to watch native transfers only.
+    tokens:
+      - address: "0xdAC17F958D2ee523a2206206994597C13D831ec7"
+        symbol: USDT
+        decimals: 6
+      - address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"
+        symbol: USDC
+        decimals: 6
+      - address: "0x6B175474E89094C44Da98b954EedeAC495271d0F"
+        symbol: DAI
+        decimals: 18
+
+  # - name: base
+  #   chain_id: 8453
+  #   rpc_url: wss://base-rpc.publicnode.com
+  #   confirmations: safe
+  #   tokens:
+  #     - address: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+  #       symbol: USDC
+  #       decimals: 6

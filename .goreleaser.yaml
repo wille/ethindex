@@ -1,0 +1,62 @@
+# Documentation: https://goreleaser.com
+version: 2
+
+project_name: ethindex
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: ethindex
+    main: ./cmd/ethindex
+    binary: ethindex
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - id: ethindex
+    formats: [tar.gz]
+    # Use zip on Windows
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: >-
+      {{ .ProjectName }}_{{ .Version }}_
+      {{- .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+    files:
+      - README.md
+      - LICENSE
+      - config.example.yaml
+
+checksum:
+  name_template: "checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+      - "Merge pull request"
+      - "Merge branch"
+
+release:
+  github:
+    owner: wille
+    name: ethindex
+  draft: false
+  prerelease: auto

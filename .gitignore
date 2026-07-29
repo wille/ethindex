@@ -1,0 +1,11 @@
+# Build outputs
+/ethindex
+/dist/
+
+# Local databases
+*.db
+*.db-shm
+*.db-wal
+
+# Local config with real endpoints and wallets
+config.yaml

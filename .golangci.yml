@@ -1,0 +1,16 @@
+version: "2"
+
+linters:
+  settings:
+    errcheck:
+      # Deferred cleanup calls whose errors have no receiver.
+      exclude-functions:
+        - (io.Closer).Close
+        - (*database/sql.Rows).Close
+        - (*net/http.ResponseController).Flush
+  exclusions:
+    rules:
+      # Test code exercises error paths deliberately.
+      - path: _test\.go
+        linters:
+          - errcheck

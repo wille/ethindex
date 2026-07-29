@@ -1,0 +1,49 @@
+name: Publish Docker image
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  # A reusable-workflow job cannot contain steps, so derive the image version
+  # (tag name, or dev-<sha> off master) in a small preceding job.
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - name: Get version
+        id: get_version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=dev-${GITHUB_SHA::8}" >> "$GITHUB_OUTPUT"
+          fi
+
+  build:
+    name: Build Docker image
+    needs: version
+    permissions:
+      contents: read  # fetch the repository content
+      packages: write  # push to ghcr.io
+      id-token: write  # sign SLSA provenance and cache entries via GitHub OIDC
+    uses: docker/github-builder/.github/workflows/build.yml@c4a1b216d96a8c85b45a9974b37857828274c808 # v1.13.0
+    with:
+      output: image
+      push: true
+      platforms: linux/amd64,linux/arm64
+      meta-images: ghcr.io/wille/ethindex
+      set-meta-labels: true
+    secrets:
+      registry-auths: |
+        - registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
