@@ -239,3 +239,37 @@ indexers:
 		t.Errorf("max_catchup_age default = %v, want 0 (unlimited)", ix.MaxCatchupAge)
 	}
 }
+
+func TestEnvExpansion(t *testing.T) {
+	t.Setenv("ETHINDEX_TEST_HOST", "node.example.com")
+	t.Setenv("ETHINDEX_TEST_KEY", "sekrit")
+
+	cfg, err := Parse([]byte(`
+database: "$literal-dollar.db"
+addresses:
+  - "0x0000000000000000000000000000000000000001"
+indexers:
+  - {name: eth, chain_id: 1, rpc_url: "wss://${ETHINDEX_TEST_HOST}/v2/${ETHINDEX_TEST_KEY}"}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Indexers[0].RPCURL; got != "wss://node.example.com/v2/sekrit" {
+		t.Errorf("rpc_url = %q", got)
+	}
+	// A bare $ without braces stays literal.
+	if cfg.Database != "$literal-dollar.db" {
+		t.Errorf("database = %q, want literal $", cfg.Database)
+	}
+
+	// Unset variables are a hard error naming the variable.
+	_, err = Parse([]byte(`
+addresses:
+  - "0x0000000000000000000000000000000000000001"
+indexers:
+  - {name: eth, chain_id: 1, rpc_url: "wss://${ETHINDEX_TEST_UNSET_VAR}/"}
+`))
+	if err == nil || !strings.Contains(err.Error(), "ETHINDEX_TEST_UNSET_VAR") {
+		t.Fatalf("err = %v, want unset-variable error naming the variable", err)
+	}
+}

@@ -1,3 +1,7 @@
+# ${VAR} references anywhere in this file expand to environment
+# variables at load time (unset variables fail startup) - useful for
+# keeping provider API keys out of the config.
+
 # SQLite database persisting matched transactions and indexer progress,
 # so a restart resumes where the process left off (default: ethindex.db)
 database: ethindex.db

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -137,16 +139,46 @@ func Load(path string) (*Config, error) {
 	return Parse(data)
 }
 
-// Parse parses and validates raw YAML config bytes.
+// Parse parses and validates raw YAML config bytes, expanding
+// ${VAR} environment references first.
 func Parse(data []byte) (*Config, error) {
+	expanded, err := expandEnv(string(data))
+	if err != nil {
+		return nil, err
+	}
 	cfg := &Config{}
-	if err := yaml.Unmarshal(data, cfg); err != nil {
+	if err := yaml.Unmarshal([]byte(expanded), cfg); err != nil {
 		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
 	return cfg, nil
+}
+
+// envRef matches the explicit ${VAR} form only; a bare $ stays
+// literal.
+var envRef = regexp.MustCompile(`\$\{([A-Za-z_][A-Za-z0-9_]*)\}`)
+
+// expandEnv substitutes ${VAR} references with environment variables,
+// so secrets (provider API keys in RPC URLs) can stay out of the
+// config file. Referencing an unset variable is a hard config error
+// rather than a silent empty string that would surface much later as
+// a confusing dial failure.
+func expandEnv(s string) (string, error) {
+	var missing []string
+	expanded := envRef.ReplaceAllStringFunc(s, func(ref string) string {
+		name := ref[2 : len(ref)-1]
+		if v, ok := os.LookupEnv(name); ok {
+			return v
+		}
+		missing = append(missing, name)
+		return ref
+	})
+	if len(missing) > 0 {
+		return "", fmt.Errorf("config references unset environment variable(s): %s", strings.Join(missing, ", "))
+	}
+	return expanded, nil
 }
 
 func parseAddress(s string) (common.Address, error) {

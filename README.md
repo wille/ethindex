@@ -124,6 +124,12 @@ go after the image name (the config path defaults to
 Addresses are global - every indexer watches the same set on its own
 chain. Each entry in `indexers` runs concurrently against its own node.
 
+`${VAR}` references anywhere in the file expand to environment
+variables at load time, so provider API keys stay out of the config
+(`rpc_url: wss://eth-mainnet.example.com/v2/${RPC_API_KEY}`). A
+referenced variable that is unset fails startup with an error naming
+it; a bare `$` without braces stays literal.
+
 ```yaml
 # SQLite database persisting matched transactions and indexer progress
 # (default: ethindex.db)
