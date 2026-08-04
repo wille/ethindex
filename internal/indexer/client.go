@@ -38,6 +38,16 @@ type BlockTx struct {
 	Nonce hexutil.Uint64  `json:"nonce"`
 }
 
+// BlockHeader is the header subset used for reorg ancestor walks,
+// fetched with fullTx=false. It deliberately has NO transactions
+// field: in that mode the node returns transaction hashes (strings),
+// which must not be decoded into BlockTx objects.
+type BlockHeader struct {
+	Hash       common.Hash    `json:"hash"`
+	ParentHash common.Hash    `json:"parentHash"`
+	Number     hexutil.Uint64 `json:"number"`
+}
+
 // BlockReceipt is the subset of a receipt the indexer inspects, decoded
 // raw for the same reason as Block: typed decoding rejects unknown
 // transaction types (OP-stack deposits). Logs carry every event of the
@@ -100,7 +110,7 @@ type ChainClient interface {
 	TransactionsByHash(ctx context.Context, hashes []common.Hash) ([]*BlockTx, []error, error)
 	// HeaderRefsByNumbers fetches many block headers (bodies excluded)
 	// in one batch request, for reorg ancestor walks.
-	HeaderRefsByNumbers(ctx context.Context, numbers []uint64) ([]*Block, []error, error)
+	HeaderRefsByNumbers(ctx context.Context, numbers []uint64) ([]*BlockHeader, []error, error)
 	// FilterLogsBatch runs several eth_getLogs queries in one batch
 	// request. The error slice is per query.
 	FilterLogsBatch(ctx context.Context, queries []ethereum.FilterQuery) ([][]types.Log, []error, error)
@@ -398,8 +408,8 @@ func (c *rpcClient) TransactionsByHash(ctx context.Context, hashes []common.Hash
 
 // HeaderRefsByNumbers fetches many block headers (fullTx=false, so the
 // bodies stay home) in one batch request.
-func (c *rpcClient) HeaderRefsByNumbers(ctx context.Context, numbers []uint64) ([]*Block, []error, error) {
-	blocks := make([]*Block, len(numbers))
+func (c *rpcClient) HeaderRefsByNumbers(ctx context.Context, numbers []uint64) ([]*BlockHeader, []error, error) {
+	blocks := make([]*BlockHeader, len(numbers))
 	batch := make([]rpc.BatchElem, len(numbers))
 	for i, n := range numbers {
 		batch[i] = rpc.BatchElem{

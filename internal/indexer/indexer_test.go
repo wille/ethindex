@@ -285,7 +285,7 @@ func (f *fakeClient) TransactionsByHash(_ context.Context, hashes []common.Hash)
 	return txs, errs, nil
 }
 
-func (f *fakeClient) HeaderRefsByNumbers(_ context.Context, numbers []uint64) ([]*Block, []error, error) {
+func (f *fakeClient) HeaderRefsByNumbers(_ context.Context, numbers []uint64) ([]*BlockHeader, []error, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.multiBatchHits++
@@ -293,11 +293,11 @@ func (f *fakeClient) HeaderRefsByNumbers(_ context.Context, numbers []uint64) ([
 	if f.batchErr != nil {
 		return nil, nil, f.batchErr
 	}
-	blocks := make([]*Block, len(numbers))
+	blocks := make([]*BlockHeader, len(numbers))
 	errs := make([]error, len(numbers))
 	for i, n := range numbers {
 		if b, ok := f.byNumber[n]; ok {
-			blocks[i] = &Block{Hash: b.Hash, ParentHash: b.ParentHash, Number: b.Number, Time: b.Time}
+			blocks[i] = &BlockHeader{Hash: b.Hash, ParentHash: b.ParentHash, Number: b.Number}
 		} else {
 			errs[i] = ethereum.NotFound
 		}
