@@ -1,7 +1,6 @@
 # ethindex
 
 [![CI](https://github.com/wille/ethindex/actions/workflows/commit.yml/badge.svg)](https://github.com/wille/ethindex/actions/workflows/commit.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/wille/ethindex)](https://goreportcard.com/report/github.com/wille/ethindex)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/wille/ethindex)](go.mod)
 [![License: MIT](https://img.shields.io/github/license/wille/ethindex)](LICENSE)
 
