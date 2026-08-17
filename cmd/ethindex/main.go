@@ -70,7 +70,7 @@ func main() {
 		slog.Error("loading config", "path", *configPath, "err", err)
 		os.Exit(1)
 	}
-	slog.Info("configuration loaded", "addresses", len(cfg.WatchedAddresses), "indexers", len(cfg.Indexers))
+	slog.Info("configuration loaded", "addresses", cfg.Watched.Count(), "indexers", len(cfg.Indexers))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -116,7 +116,7 @@ func main() {
 		for _, entry := range cfg.Indexers {
 			chains[entry.Name] = entry.ChainID
 		}
-		srv := api.New(store, hub, chains)
+		srv := api.New(store, hub, chains, cfg.Watched)
 		go func() {
 			slog.Info("api server listening", "addr", cfg.API)
 			if err := http.ListenAndServe(cfg.API, srv.Handler()); err != nil {
@@ -128,7 +128,7 @@ func main() {
 	slog.Info("starting indexers", "count", len(cfg.Indexers))
 	g, gctx := errgroup.WithContext(ctx)
 	for _, entry := range cfg.Indexers {
-		ix := indexer.New(entry, cfg.WatchedAddresses, event.Multi(sinks...), store)
+		ix := indexer.New(entry, cfg.Watched, event.Multi(sinks...), store)
 		ix.Resume = *resume
 		ix.FullEventLogs = *jsonLogs
 		g.Go(func() error { return ix.Run(gctx) })

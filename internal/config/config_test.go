@@ -4,6 +4,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ethereum/go-ethereum/common"
+
+	"github.com/wille/ethindex/internal/event"
 )
 
 const validBase = `
@@ -115,8 +119,58 @@ func TestAddressNormalization(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Casing must not matter: both parse to the same address bytes.
-	if upper.WatchedAddresses[0] != lower.WatchedAddresses[0] {
-		t.Errorf("addresses differ: %s vs %s", upper.WatchedAddresses[0], lower.WatchedAddresses[0])
+	addr := common.HexToAddress("0xabcdefabcdefabcdefabcdefabcdefabcdefabcd")
+	if !upper.Watched.Contains(addr) || !lower.Watched.Contains(addr) {
+		t.Errorf("address casing not normalized: upper=%v lower=%v",
+			upper.Watched.Contains(addr), lower.Watched.Contains(addr))
+	}
+}
+
+func TestNamedAddresses(t *testing.T) {
+	cfg, err := Parse([]byte(`
+addresses:
+  - "0x1111111111111111111111111111111111111111"
+  - {name: hot-wallet, address: "0x2222222222222222222222222222222222222222"}
+indexers:
+  - {name: eth, chain_id: 1, rpc_url: "wss://example.com"}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Watched.Count() != 2 {
+		t.Fatalf("watched = %d, want 2", cfg.Watched.Count())
+	}
+	unnamed := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	named := common.HexToAddress("0x2222222222222222222222222222222222222222")
+	if got := cfg.Watched.Name(unnamed); got != "" {
+		t.Errorf("unnamed entry label = %q, want empty", got)
+	}
+	if got := cfg.Watched.Name(named); got != "hot-wallet" {
+		t.Errorf("named entry label = %q, want hot-wallet", got)
+	}
+}
+
+func TestWatchedSetFor(t *testing.T) {
+	named := common.HexToAddress("0x1111111111111111111111111111111111111111")
+	unnamed := common.HexToAddress("0x2222222222222222222222222222222222222222")
+	other := common.HexToAddress("0x3333333333333333333333333333333333333333")
+	s := NewWatchedSet(map[common.Address]string{named: "hot", unnamed: ""})
+
+	if got := s.For(other, named, event.DirectionIn); got != "hot" {
+		t.Errorf("in = %q, want hot", got)
+	}
+	if got := s.For(named, other, event.DirectionOut); got != "hot" {
+		t.Errorf("out = %q, want hot", got)
+	}
+	// Self anchors on the recipient, falling back to the sender's label.
+	if got := s.For(unnamed, named, event.DirectionSelf); got != "hot" {
+		t.Errorf("self to named = %q, want hot", got)
+	}
+	if got := s.For(named, unnamed, event.DirectionSelf); got != "hot" {
+		t.Errorf("self fallback = %q, want hot", got)
+	}
+	if got := s.For(other, unnamed, event.DirectionIn); got != "" {
+		t.Errorf("unnamed in = %q, want empty", got)
 	}
 }
 
@@ -138,6 +192,25 @@ indexers:
 addresses:
   - "0x1111111111111111111111111111111111111111"
   - "0x1111111111111111111111111111111111111111"
+indexers:
+  - {name: eth, chain_id: 1, rpc_url: "wss://example.com"}
+`,
+		"object entry missing address": `
+addresses:
+  - {name: hot-wallet}
+indexers:
+  - {name: eth, chain_id: 1, rpc_url: "wss://example.com"}
+`,
+		"object entry bad address": `
+addresses:
+  - {name: hot-wallet, address: "0x123"}
+indexers:
+  - {name: eth, chain_id: 1, rpc_url: "wss://example.com"}
+`,
+		"duplicate across entry forms": `
+addresses:
+  - "0x1111111111111111111111111111111111111111"
+  - {name: hot-wallet, address: "0x1111111111111111111111111111111111111111"}
 indexers:
   - {name: eth, chain_id: 1, rpc_url: "wss://example.com"}
 `,
@@ -186,11 +259,39 @@ indexers:
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cfg.WatchedAddresses) != 5 {
-		t.Fatalf("watched = %d, want 5", len(cfg.WatchedAddresses))
+	if cfg.Watched.Count() != 5 {
+		t.Fatalf("watched = %d, want 5", cfg.Watched.Count())
 	}
-	if cfg.WatchedAddresses[0].Hex() != "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266" {
-		t.Errorf("first derived = %s", cfg.WatchedAddresses[0].Hex())
+	first := common.HexToAddress("0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266")
+	if !cfg.Watched.Contains(first) {
+		t.Error("first derived anvil address not watched")
+	}
+	// Unnamed wallets label their addresses with the xpub itself.
+	if got := cfg.Watched.Name(first); got != anvilAccountXpub {
+		t.Errorf("derived label = %q, want the xpub", got)
+	}
+}
+
+func TestConfigHDWalletNamed(t *testing.T) {
+	cfg, err := Parse([]byte(`
+hd_wallets:
+  - name: deposits
+    xpub: "` + anvilAccountXpub + `"
+    count: 3
+indexers:
+  - {name: eth, chain_id: 1, rpc_url: "wss://example.com"}
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := 0
+	cfg.Watched.Each(func(a common.Address) {
+		if cfg.Watched.Name(a) == "deposits" {
+			found++
+		}
+	})
+	if found != 3 {
+		t.Errorf("addresses labeled deposits = %d, want all 3", found)
 	}
 }
 

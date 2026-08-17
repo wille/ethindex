@@ -44,11 +44,15 @@ type Event struct {
 	FirstSeenBlock uint64    `json:"first_seen_block,omitempty"`
 	// MinedAt is when the transaction was first seen included in a
 	// block; empty while pending, immutable across reorgs.
-	MinedAt       string `json:"mined_at,omitempty"`
-	TxHash        string `json:"tx_hash"`
-	LogIndex      *uint  `json:"log_index,omitempty"`
-	From          string `json:"from"`
-	To            string `json:"to"`
+	MinedAt  string `json:"mined_at,omitempty"`
+	TxHash   string `json:"tx_hash"`
+	LogIndex *uint  `json:"log_index,omitempty"`
+	From     string `json:"from"`
+	To       string `json:"to"`
+	// Wallet is the configured name of the watched side's wallet
+	// (name-or-xpub for HD wallets), resolved from config at emission -
+	// never persisted, so renames apply to replayed history too.
+	Wallet        string `json:"wallet,omitempty"`
 	Asset         string `json:"asset"`
 	TokenAddress  string `json:"token_address,omitempty"`
 	Decimals      uint8  `json:"decimals"`

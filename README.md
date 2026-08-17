@@ -147,9 +147,12 @@ api: ":8080"
 
 addresses:
   - "0xYourDepositAddress"
+  # or named - the name is printed on matched logs and events:
+  - {name: hot-wallet, address: "0xYourHotWalletAddress"}
 
 hd_wallets:                # optional: derive addresses from an xpub
-  - xpub: "xpub6C..."      # account-level extended PUBLIC key
+  - name: deposits         # wallet label on logs/events (default: the xpub)
+    xpub: "xpub6C..."      # account-level extended PUBLIC key
     path: "0/*"            # relative to the xpub, * = index (default 0/*)
     start: 0               # first index (default 0)
     count: 1000            # addresses to derive and track
@@ -192,7 +195,10 @@ e.g. USDT is 6 decimals on mainnet but 18 on BSC).
 key: export the xpub at the account level (e.g. `m/44'/60'/0'` - what
 MetaMask-compatible wallets use for Ethereum) and the configured
 `path`/`start`/`count` expand it into concrete addresses at load time,
-which join the global watched set. Things to know:
+which join the global watched set. Matched transactions log
+`wallet: <name>` (the xpub when the wallet has no `name`); the label
+is resolved from config at emission and read time, never stored, so
+renaming a wallet relabels replayed history too. Things to know:
 
 - **Never put an xprv in the config.** Private extended keys are
   rejected at startup. An xpub can only derive non-hardened children,

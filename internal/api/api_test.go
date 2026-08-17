@@ -11,6 +11,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+
+	"github.com/wille/ethindex/internal/config"
 	"github.com/wille/ethindex/internal/event"
 	"github.com/wille/ethindex/internal/storage"
 )
@@ -23,7 +26,12 @@ func newTestServer(t *testing.T) (*httptest.Server, storage.Storage, *event.Hub)
 	}
 	t.Cleanup(func() { store.Close() })
 	hub := event.NewHub()
-	srv := New(store, hub, map[string]uint64{"ethereum": 1, "base": 8453})
+	// sampleTx's incoming leg pays 0xb, named here so synthesized
+	// events carry a wallet label.
+	watched := config.NewWatchedSet(map[common.Address]string{
+		common.HexToAddress("0xb"): "test-wallet",
+	})
+	srv := New(store, hub, map[string]uint64{"ethereum": 1, "base": 8453}, watched)
 	ts := httptest.NewServer(srv.Handler())
 	t.Cleanup(ts.Close)
 	return ts, store, hub
@@ -240,6 +248,9 @@ func TestLatestEndpoint(t *testing.T) {
 	}
 	if events[0].ChainID != 8453 {
 		t.Errorf("chain id = %d", events[0].ChainID)
+	}
+	if events[0].Wallet != "test-wallet" {
+		t.Errorf("wallet = %q, want config-resolved name", events[0].Wallet)
 	}
 }
 

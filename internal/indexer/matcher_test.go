@@ -28,9 +28,18 @@ func testKey(t *testing.T) (*ecdsa.PrivateKey, common.Address) {
 	return key, crypto.PubkeyToAddress(key.PublicKey)
 }
 
+// watchedSet builds an unnamed watched set for tests.
+func watchedSet(addrs ...common.Address) *config.WatchedSet {
+	names := make(map[common.Address]string, len(addrs))
+	for _, a := range addrs {
+		names[a] = ""
+	}
+	return config.NewWatchedSet(names)
+}
+
 func newMatcher() *Matcher {
 	return NewMatcher(
-		[]common.Address{watchedAddr},
+		watchedSet(watchedAddr),
 		[]config.ParsedToken{{Address: tokenAddr, Symbol: "TEST", Decimals: 6}},
 		testChainID,
 		"",
@@ -169,7 +178,7 @@ func TestMatchDirections(t *testing.T) {
 	key, sender := testKey(t)
 	// Watch the tx signer so its sends match as outgoing.
 	m := NewMatcher(
-		[]common.Address{sender, watchedAddr},
+		watchedSet(sender, watchedAddr),
 		[]config.ParsedToken{{Address: tokenAddr, Symbol: "TEST", Decimals: 6}},
 		testChainID,
 		"",
@@ -234,7 +243,7 @@ func TestMatchDirections(t *testing.T) {
 
 func TestNativeSymbol(t *testing.T) {
 	key, sender := testKey(t)
-	m := NewMatcher([]common.Address{watchedAddr}, nil, testChainID, "BNB")
+	m := NewMatcher(watchedSet(watchedAddr), nil, testChainID, "BNB")
 
 	matches := m.MatchTx(signedTx(t, key, watchedAddr, big.NewInt(1e18), nil))
 	if len(matches) != 1 || matches[0].Asset != "BNB" {
@@ -301,9 +310,13 @@ func TestMatchLog(t *testing.T) {
 // Zero-value transfers are address-poisoning spam: warned about, never
 // matched.
 func TestZeroValueTransfersIgnored(t *testing.T) {
-	m := newMatcher()
 	key, sender := testKey(t)
-	m.watched[sender] = struct{}{}
+	m := NewMatcher(
+		watchedSet(watchedAddr, sender),
+		[]config.ParsedToken{{Address: tokenAddr, Symbol: "TEST", Decimals: 6}},
+		testChainID,
+		"",
+	)
 
 	// ERC20 Transfer log with amount 0 (e.g. USDT transferFrom poison).
 	if _, ok := m.MatchLog(transferLog(tokenAddr, watchedAddr, otherAddr, big.NewInt(0), 3)); ok {

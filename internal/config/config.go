@@ -110,6 +110,23 @@ type IndexerConfig struct {
 	TokenList []ParsedToken `yaml:"-"`
 }
 
+// AddressEntry is one watched-address config entry: either a bare
+// address string, or a mapping with an optional display name
+// (`{name: hot-wallet, address: "0x..."}`) printed on matched
+// transaction logs and events.
+type AddressEntry struct {
+	Name    string `yaml:"name"`
+	Address string `yaml:"address"`
+}
+
+func (e *AddressEntry) UnmarshalYAML(node *yaml.Node) error {
+	if node.Kind == yaml.ScalarNode {
+		return node.Decode(&e.Address)
+	}
+	type plain AddressEntry
+	return node.Decode((*plain)(e))
+}
+
 // Config is the top-level configuration file schema. Addresses are
 // global: every indexer watches the same address set on its own chain.
 type Config struct {
@@ -122,12 +139,13 @@ type Config struct {
 	// API is the listen address for the consumer events API
 	// (e.g. ":8080"). Empty disables the API server.
 	API       string            `yaml:"api"`
-	Addresses []string          `yaml:"addresses"`
+	Addresses []AddressEntry    `yaml:"addresses"`
 	HDWallets []hdwallet.Wallet `yaml:"hd_wallets"`
 	Indexers  []IndexerConfig   `yaml:"indexers"`
 
-	// WatchedAddresses is the parsed form of Addresses, populated by validate().
-	WatchedAddresses []common.Address `yaml:"-"`
+	// Watched is the parsed and labeled form of Addresses plus every
+	// HD-derived address, populated by validate().
+	Watched *WatchedSet `yaml:"-"`
 }
 
 // Load reads, parses and validates the config file at path.
@@ -196,29 +214,32 @@ func (c *Config) validate() error {
 	if len(c.Addresses) == 0 && len(c.HDWallets) == 0 {
 		return fmt.Errorf("at least one watched address or hd wallet is required")
 	}
-	seen := make(map[common.Address]struct{}, len(c.Addresses))
-	for _, s := range c.Addresses {
-		addr, err := parseAddress(s)
+	c.Watched = newWatchedSet(len(c.Addresses))
+	for _, entry := range c.Addresses {
+		addr, err := parseAddress(entry.Address)
 		if err != nil {
 			return err
 		}
-		if _, dup := seen[addr]; dup {
+		if !c.Watched.add(addr, c.Watched.intern(entry.Name)) {
 			return fmt.Errorf("duplicate watched address %s", addr.Hex())
 		}
-		seen[addr] = struct{}{}
-		c.WatchedAddresses = append(c.WatchedAddresses, addr)
 	}
 	for i, w := range c.HDWallets {
 		derived, err := w.Derive()
 		if err != nil {
 			return fmt.Errorf("hd_wallets[%d]: %w", i, err)
 		}
+		// One interned label covers every address the wallet derives:
+		// its name, or the xpub itself when unnamed.
+		label := w.Name
+		if label == "" {
+			label = w.XPub
+		}
+		li := c.Watched.intern(label)
 		for _, addr := range derived {
-			if _, dup := seen[addr]; dup {
+			if !c.Watched.add(addr, li) {
 				return fmt.Errorf("hd_wallets[%d]: derived address %s is already watched", i, addr.Hex())
 			}
-			seen[addr] = struct{}{}
-			c.WatchedAddresses = append(c.WatchedAddresses, addr)
 		}
 	}
 

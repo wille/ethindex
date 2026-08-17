@@ -20,6 +20,9 @@ import (
 // must not contain hardened markers - export the xpub at the account
 // level (e.g. m/44'/60'/0') and derive the rest here.
 type Wallet struct {
+	// Name labels the wallet on matched transaction logs and events;
+	// the xpub itself is used when empty.
+	Name string `yaml:"name"`
 	XPub string `yaml:"xpub"`
 	// Path is the derivation path relative to the xpub, with "*" as
 	// the index placeholder in the last segment. Default "0/*" (the

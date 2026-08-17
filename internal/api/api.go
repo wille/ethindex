@@ -15,6 +15,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+
+	"github.com/wille/ethindex/internal/config"
 	"github.com/wille/ethindex/internal/event"
 	"github.com/wille/ethindex/internal/storage"
 )
@@ -33,10 +36,11 @@ const (
 
 // Server serves the events API over plain net/http.
 type Server struct {
-	store  storage.Storage
-	hub    *event.Hub
-	chains map[string]uint64 // indexer name -> chain id, from config
-	log    *slog.Logger
+	store   storage.Storage
+	hub     *event.Hub
+	chains  map[string]uint64 // indexer name -> chain id, from config
+	watched *config.WatchedSet
+	log     *slog.Logger
 
 	// pingInterval is the SSE keep-alive comment cadence; shortened in
 	// tests.
@@ -44,13 +48,15 @@ type Server struct {
 }
 
 // New builds a Server streaming live events from hub and backfilling
-// from store. chains maps indexer names to their chain ids, which the
-// database does not record.
-func New(store storage.Storage, hub *event.Hub, chains map[string]uint64) *Server {
+// from store. chains maps indexer names to their chain ids and watched
+// carries the wallet labels - both config-derived, which the database
+// does not record.
+func New(store storage.Storage, hub *event.Hub, chains map[string]uint64, watched *config.WatchedSet) *Server {
 	return &Server{
 		store:        store,
 		hub:          hub,
 		chains:       chains,
+		watched:      watched,
 		log:          slog.Default().With("component", "api"),
 		pingInterval: 15 * time.Second,
 	}
@@ -225,6 +231,9 @@ func (s *Server) synthesize(ctx context.Context, leg storage.LegUpdate, confs *c
 		Confirmations:  confs.confirmations(ctx, leg),
 		ReplacedBy:     leg.ReplacedBy,
 	}
+	// The wallet label is config-derived, resolved at read time rather
+	// than persisted - renames apply to replayed history too.
+	ev.Wallet = s.watched.For(common.HexToAddress(leg.From), common.HexToAddress(leg.To), ev.Direction)
 	if !leg.FirstSeen.IsZero() {
 		ev.FirstSeen = leg.FirstSeen.UTC().Format(time.RFC3339)
 	}

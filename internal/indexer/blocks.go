@@ -529,6 +529,9 @@ func (ix *Indexer) emitAll(evs []event.Event) {
 		// The timestamp doubles as the event id on the API stream, so it
 		// is stamped here rather than per sink.
 		ev.Timestamp = time.Now().UTC().Format(event.TimeLayout)
+		// The wallet label is resolved from config at emission, never
+		// carried in tracked state or storage.
+		ev.Wallet = ix.matcher.watched.For(common.HexToAddress(ev.From), common.HexToAddress(ev.To), ev.Direction)
 		var attrs []any
 		if ix.FullEventLogs {
 			// Structured consumers get the whole event, same schema as
@@ -546,8 +549,12 @@ func (ix *Indexer) emitAll(evs []event.Event) {
 			if ev.BlockNumber != 0 {
 				block = ev.BlockNumber
 			}
-			attrs = []any{"address", addr, "tx", ev.TxHash, "direction", string(ev.Direction),
-				"value", logValue(ev.Value), "asset", ev.Asset, "block", block}
+			attrs = []any{"address", addr}
+			if ev.Wallet != "" {
+				attrs = append(attrs, "wallet", ev.Wallet)
+			}
+			attrs = append(attrs, "tx", ev.TxHash, "direction", string(ev.Direction),
+				"value", logValue(ev.Value), "asset", ev.Asset, "block", block)
 			if ev.ReplacedBy != "" {
 				attrs = append(attrs, "replaced_by", ev.ReplacedBy)
 			}

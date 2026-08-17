@@ -13,16 +13,20 @@ database: ethindex.db
 # api: ":8080"
 
 # Addresses to watch. Global: every indexer watches this same set of
-# addresses on its own chain.
+# addresses on its own chain. An entry is either a bare address or
+# {name, address} - the name is printed on matched transaction logs
+# and events (wallet: <name>).
 addresses:
   - "0x0000000000000000000000000000000000000001"
+  # - {name: hot-wallet, address: "0x0000000000000000000000000000000000000002"}
 
 # HD wallets: derive watched addresses from a BIP32 extended PUBLIC key
 # (never put an xprv here - it is rejected). Export the xpub at the
 # account level (e.g. m/44'/60'/0'); only non-hardened derivation is
 # possible from an xpub.
 # hd_wallets:
-#   - xpub: "xpub6C..."
+#   - name: deposits # wallet label on logs/events (default: the xpub)
+#     xpub: "xpub6C..."
 #     path: "0/*"   # relative to the xpub, * is the index (default 0/*)
 #     start: 0      # first index (default 0)
 #     count: 1000   # number of addresses to derive and track

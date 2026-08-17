@@ -533,7 +533,7 @@ func startIndexerWithStore(t *testing.T, client *fakeClient, confirmations uint6
 func startIndexerWithConfig(t *testing.T, client *fakeClient, cfg config.IndexerConfig, addresses []common.Address, store storage.Storage, mutate ...func(*Indexer)) *testHarness {
 	t.Helper()
 	buf := &lockedBuffer{}
-	ix := New(cfg, addresses, event.NewEmitter(buf), store)
+	ix := New(cfg, watchedSet(addresses...), event.NewEmitter(buf), store)
 	// Tests exercise the full restore path by default; production
 	// defaults to tip-start (opt in with -resume).
 	ix.Resume = true
@@ -1032,7 +1032,7 @@ func manyAddresses() []common.Address {
 }
 
 func TestTransferTopicFiltersModes(t *testing.T) {
-	small := &Indexer{matcher: NewMatcher([]common.Address{watchedAddr}, []config.ParsedToken{{Address: tokenAddr, Symbol: "TEST", Decimals: 6}}, testChainID, "")}
+	small := &Indexer{matcher: NewMatcher(watchedSet(watchedAddr), []config.ParsedToken{{Address: tokenAddr, Symbol: "TEST", Decimals: 6}}, testChainID, "")}
 	if got := small.transferTopicFilters(); len(got) != 2 || len(got[0]) != 3 || len(got[1]) != 2 {
 		t.Fatalf("small set filters = %v", got)
 	}
@@ -1040,7 +1040,7 @@ func TestTransferTopicFiltersModes(t *testing.T) {
 		t.Errorf("small chunk = %d", small.initialLogChunk())
 	}
 
-	large := &Indexer{matcher: NewMatcher(manyAddresses(), []config.ParsedToken{{Address: tokenAddr, Symbol: "TEST", Decimals: 6}}, testChainID, "")}
+	large := &Indexer{matcher: NewMatcher(watchedSet(manyAddresses()...), []config.ParsedToken{{Address: tokenAddr, Symbol: "TEST", Decimals: 6}}, testChainID, "")}
 	got := large.transferTopicFilters()
 	if len(got) != 1 || len(got[0]) != 1 || got[0][0][0] != transferTopic {
 		t.Fatalf("large set filters = %v", got)
@@ -1476,7 +1476,7 @@ func TestEmitAllFullEventLogs(t *testing.T) {
 		Confirmations:  config.Confirmations{Depth: 3},
 		PendingTimeout: 30 * time.Minute,
 	}
-	ix := New(cfg, []common.Address{watchedAddr}, nil, nil)
+	ix := New(cfg, watchedSet(watchedAddr), nil, nil)
 	ix.dial = func(context.Context) (ChainClient, error) { return client, nil }
 
 	logBuf := &bytes.Buffer{}
@@ -1519,6 +1519,78 @@ func TestEmitAllFullEventLogs(t *testing.T) {
 	}
 	if _, hasEvent := curated["event"]; hasEvent {
 		t.Errorf("event object present in curated mode: %s", logBuf.String())
+	}
+}
+
+func TestEmitAllWalletLabel(t *testing.T) {
+	cfg := config.IndexerConfig{
+		Name:           "testnet",
+		ChainID:        testChainID.Uint64(),
+		Confirmations:  config.Confirmations{Depth: 3},
+		PendingTimeout: 30 * time.Minute,
+	}
+	buf := &lockedBuffer{}
+	ix := New(cfg, config.NewWatchedSet(map[common.Address]string{
+		watchedAddr: "hot-wallet",
+		otherAddr:   "",
+	}), event.NewEmitter(buf), nil)
+
+	logBuf := &bytes.Buffer{}
+	ix.log = slog.New(slog.NewJSONHandler(logBuf, nil))
+	ev := event.Event{
+		Type: event.TypeMined, Direction: event.DirectionIn,
+		TxHash: "0xabc", From: otherAddr.Hex(), To: watchedAddr.Hex(),
+		Asset: "ETH", Decimals: 18, ValueRaw: "1", Value: "1",
+		BlockNumber: 100,
+	}
+
+	// Named watched recipient: the label rides the log line and the
+	// emitted event.
+	ix.emitAll([]event.Event{ev})
+	var line map[string]any
+	if err := json.Unmarshal(logBuf.Bytes(), &line); err != nil {
+		t.Fatalf("log line not JSON: %v: %s", err, logBuf.String())
+	}
+	if line["wallet"] != "hot-wallet" {
+		t.Errorf("log wallet = %v, want hot-wallet", line["wallet"])
+	}
+	emitted := buf.lines()
+	if len(emitted) != 1 {
+		t.Fatalf("emitted events = %d, want 1", len(emitted))
+	}
+	var sunk event.Event
+	if err := json.Unmarshal(emitted[0], &sunk); err != nil {
+		t.Fatalf("emitted event not JSON: %v", err)
+	}
+	if sunk.Wallet != "hot-wallet" {
+		t.Errorf("event wallet = %q, want hot-wallet", sunk.Wallet)
+	}
+
+	// Self direction anchored on an unnamed recipient falls back to the
+	// named sender.
+	logBuf.Reset()
+	ev.From, ev.To = watchedAddr.Hex(), otherAddr.Hex()
+	ev.Direction = event.DirectionSelf
+	ix.emitAll([]event.Event{ev})
+	line = map[string]any{}
+	if err := json.Unmarshal(logBuf.Bytes(), &line); err != nil {
+		t.Fatalf("log line not JSON: %v", err)
+	}
+	if line["wallet"] != "hot-wallet" {
+		t.Errorf("self fallback wallet = %v, want hot-wallet", line["wallet"])
+	}
+
+	// Unnamed watched sender: no wallet attr at all.
+	logBuf.Reset()
+	ev.Direction = event.DirectionOut
+	ev.From, ev.To = otherAddr.Hex(), watchedAddr.Hex()
+	ix.emitAll([]event.Event{ev})
+	line = map[string]any{}
+	if err := json.Unmarshal(logBuf.Bytes(), &line); err != nil {
+		t.Fatalf("log line not JSON: %v", err)
+	}
+	if got, ok := line["wallet"]; ok {
+		t.Errorf("unnamed out carries wallet = %v, want absent", got)
 	}
 }
 
@@ -2219,7 +2291,7 @@ func TestFinalityTagUnsupported(t *testing.T) {
 		Confirmations:  config.Confirmations{Tag: "safe"},
 		PendingTimeout: time.Minute,
 	}
-	ix := New(cfg, []common.Address{watchedAddr}, event.NewEmitter(&lockedBuffer{}), nil)
+	ix := New(cfg, watchedSet(watchedAddr), event.NewEmitter(&lockedBuffer{}), nil)
 	ix.dial = func(context.Context) (ChainClient, error) { return client, nil }
 
 	done := make(chan error, 1)
@@ -2244,7 +2316,7 @@ func TestChainIDMismatch(t *testing.T) {
 		Confirmations:  config.Confirmations{Depth: 1},
 		PendingTimeout: time.Minute,
 	}
-	ix := New(cfg, []common.Address{watchedAddr}, event.NewEmitter(&lockedBuffer{}), nil)
+	ix := New(cfg, watchedSet(watchedAddr), event.NewEmitter(&lockedBuffer{}), nil)
 	ix.dial = func(context.Context) (ChainClient, error) { return client, nil }
 
 	done := make(chan error, 1)

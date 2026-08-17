@@ -44,26 +44,23 @@ type Match struct {
 // transactions and logs into Matches. It never mutates after being
 // built and is safe for concurrent use.
 type Matcher struct {
-	watched      map[common.Address]struct{}
+	watched      *config.WatchedSet // shared read-only across indexers
 	tokens       map[common.Address]config.ParsedToken
 	signer       types.Signer
 	nativeSymbol string
 	log          *slog.Logger
 }
 
-func NewMatcher(addresses []common.Address, tokens []config.ParsedToken, chainID *big.Int, nativeSymbol string) *Matcher {
+func NewMatcher(watched *config.WatchedSet, tokens []config.ParsedToken, chainID *big.Int, nativeSymbol string) *Matcher {
 	if nativeSymbol == "" {
 		nativeSymbol = "ETH"
 	}
 	m := &Matcher{
-		watched:      make(map[common.Address]struct{}, len(addresses)),
+		watched:      watched,
 		tokens:       make(map[common.Address]config.ParsedToken, len(tokens)),
 		signer:       types.LatestSignerForChainID(chainID),
 		nativeSymbol: nativeSymbol,
 		log:          slog.Default(),
-	}
-	for _, a := range addresses {
-		m.watched[a] = struct{}{}
 	}
 	for _, t := range tokens {
 		m.tokens[t.Address] = t
@@ -72,7 +69,7 @@ func NewMatcher(addresses []common.Address, tokens []config.ParsedToken, chainID
 }
 
 // WatchedCount is the number of watched addresses.
-func (m *Matcher) WatchedCount() int { return len(m.watched) }
+func (m *Matcher) WatchedCount() int { return m.watched.Count() }
 
 // TokenAddresses returns the watched token contract addresses,
 // for use in log filter queries.
@@ -87,10 +84,10 @@ func (m *Matcher) TokenAddresses() []common.Address {
 // WatchedTopics returns the watched addresses as left-padded 32-byte
 // topics, for use as the Transfer `to` topic in log filter queries.
 func (m *Matcher) WatchedTopics() []common.Hash {
-	out := make([]common.Hash, 0, len(m.watched))
-	for a := range m.watched {
+	out := make([]common.Hash, 0, m.watched.Count())
+	m.watched.Each(func(a common.Address) {
 		out = append(out, common.BytesToHash(a.Bytes()))
-	}
+	})
 	return out
 }
 
@@ -135,8 +132,8 @@ func withTxInfo(matches []Match, sender common.Address, nonce uint64) []Match {
 // direction classifies a transfer against the watched set; ok is false
 // when neither side is watched.
 func (m *Matcher) direction(from, to common.Address) (event.Direction, bool) {
-	_, fromWatched := m.watched[from]
-	_, toWatched := m.watched[to]
+	fromWatched := m.watched.Contains(from)
+	toWatched := m.watched.Contains(to)
 	switch {
 	case fromWatched && toWatched:
 		return event.DirectionSelf, true

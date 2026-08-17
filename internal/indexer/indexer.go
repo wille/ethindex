@@ -148,11 +148,11 @@ func (ix *Indexer) finalizedNumber(ctx context.Context) (uint64, error) {
 	return num, nil
 }
 
-// New builds an Indexer watching addresses on the chain cfg describes.
-// store may be nil to run without persistence.
-func New(cfg config.IndexerConfig, addresses []common.Address, sink event.Sink, store storage.Storage) *Indexer {
+// New builds an Indexer watching the shared watched set on the chain
+// cfg describes. store may be nil to run without persistence.
+func New(cfg config.IndexerConfig, watched *config.WatchedSet, sink event.Sink, store storage.Storage) *Indexer {
 	log := slog.Default().With("indexer", cfg.Name)
-	matcher := NewMatcher(addresses, cfg.TokenList, new(big.Int).SetUint64(cfg.ChainID), cfg.NativeSymbol)
+	matcher := NewMatcher(watched, cfg.TokenList, new(big.Int).SetUint64(cfg.ChainID), cfg.NativeSymbol)
 	matcher.log = log
 	return &Indexer{
 		cfg:  cfg,
