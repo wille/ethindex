@@ -5,15 +5,23 @@ package hdwallet
 import (
 	"errors"
 	"fmt"
+	"log/slog"
 	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
+	"time"
 
 	"github.com/btcsuite/btcd/btcutil/hdkeychain"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"golang.org/x/sync/errgroup"
 )
+
+// progressInterval paces the derivation heartbeat: large windows
+// (hundreds of thousands of addresses) take long enough that a silent
+// startup looks stuck.
+const progressInterval = 5 * time.Second
 
 // Wallet derives watched addresses from a BIP32 extended public key.
 // Only non-hardened derivation is possible from an xpub, so the path
@@ -83,6 +91,41 @@ func (w Wallet) Derive() ([]common.Address, error) {
 		return nil, err
 	}
 
+	label := w.Name
+	if label == "" {
+		label = w.XPub
+	}
+	log := slog.Default().With("wallet", label)
+	log.Info("deriving hd wallet addresses", "count", w.Count)
+	start := time.Now()
+
+	// A heartbeat proves large derivations are progressing, not stuck.
+	var derived atomic.Uint64
+	heartbeatDone := make(chan struct{})
+	defer close(heartbeatDone)
+	go func() {
+		tick := time.NewTicker(progressInterval)
+		defer tick.Stop()
+		for {
+			select {
+			case <-heartbeatDone:
+				return
+			case <-tick.C:
+				n := derived.Load()
+				rate := float64(n) / time.Since(start).Seconds()
+				attrs := []any{
+					"progress", fmt.Sprintf("%.1f%%", float64(n)/float64(w.Count)*100),
+					"rate", fmt.Sprintf("%.0f/s", rate),
+				}
+				if rate > 0 {
+					eta := time.Duration(float64(uint64(w.Count)-n)/rate) * time.Second
+					attrs = append(attrs, "eta", eta.Round(time.Second))
+				}
+				log.Info("deriving hd wallet addresses", attrs...)
+			}
+		}
+	}()
+
 	// EC point derivation costs tens of microseconds per address -
 	// serial derivation of very large windows (HD wallets with a
 	// million addresses) would stall startup, so split across cores.
@@ -103,6 +146,7 @@ func (w Wallet) Derive() ([]common.Address, error) {
 					return fmt.Errorf("index %d: %w", w.Start+uint32(off), err)
 				}
 				out[off] = crypto.PubkeyToAddress(*pub.ToECDSA())
+				derived.Add(1)
 			}
 			return nil
 		})
@@ -110,5 +154,6 @@ func (w Wallet) Derive() ([]common.Address, error) {
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
+	log.Info("hd wallet derived", "addresses", len(out), "duration", time.Since(start).Round(time.Millisecond))
 	return out, nil
 }
